@@ -85,7 +85,7 @@ def login_view(request):
         key='refresh',
         value=refresh_token,
         httponly=True,
-        expires=timedelta(days=30),
+        expires=timedelta(seconds=20),
         samesite='Strict',
         secure=True
     )
@@ -102,4 +102,4 @@ def login_view(request):
 def get_user(request):
     user = request.user
     serialized_user = UserSerializer(user).data
-    return Response({'user': serialized_user}, status=status.HTTP_200_OK)
+    return Response({'user': serialized_user})

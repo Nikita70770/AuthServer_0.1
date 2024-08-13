@@ -18,11 +18,9 @@ class CSRFCheck(CsrfViewMiddleware):
         return reason
 
 
-def dummy_get_response():  # pragma: no cover
-    return None
-
-
 class SafeJWTAuthentication(BaseAuthentication):
+    def dummy_get_response(request):  # pragma: no cover
+        return None
 
     def authenticate(self, request):
         User = get_user_model()
@@ -52,11 +50,14 @@ class SafeJWTAuthentication(BaseAuthentication):
         return user, None
 
     def enforce_csrf(self, request):
-        check = CSRFCheck(dummy_get_response)
+
+        check = CSRFCheck(self.dummy_get_response)
+        # populates request.META['CSRF_COOKIE'], which is used in process_view()
         check.process_request(request)
         reason = check.process_view(request, None, (), {})
         print(reason)
         if reason:
+            # CSRF failed, bail with explicit error message
             raise exceptions.PermissionDenied('CSRF Failed: %s' % reason)
 
 

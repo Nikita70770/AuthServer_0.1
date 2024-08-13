@@ -25,7 +25,6 @@ ALLOWED_HOSTS = list(os.getenv("DJANGO_ALLOWED_HOSTS", "").split(","))
 AUTH_USER_MODEL = 'authentication.User'
 
 
-
 INSTALLED_APPS = [
     'project.apps.authentication.apps.AuthenticationConfig',
 
@@ -106,13 +105,12 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'project.settings.exceptions.core_exception_handler',
     'NON_FIELD_ERRORS_KEY': 'error',
 
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated', # make all endpoints private
-    ),
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'project.apps.authentication.authentication.SafeJWTAuthentication',
-        # 'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    )
 }
 
 # SIMPLE_JWT = {
@@ -159,11 +157,15 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ORIGIN_ALLOW_ALL = False
-CORS_ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
+# CORS_ORIGIN_ALLOW_ALL = False
+# CORS_ALLOWED_ORIGINS = [
+#   'http://localhost:3000',
+#   'http://127.0.0.1:3000',
+# ]
+CORS_ALLOW_CREDENTIALS = True # to accept cookies via ajax request
+CORS_ORIGIN_WHITELIST = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
 ]
-CORS_ALLOW_CREDENTIALS = True
-
 CSRF_TRUSTED_ORIGINS = ['http://*.localhost:3000','http://*.127.0.0.1:3000']
+# CSRF_TRUSTED_ORIGINS = ['http://localhost:3000','http://127.0.0.1:3000']

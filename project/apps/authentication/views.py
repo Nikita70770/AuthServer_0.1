@@ -1,17 +1,20 @@
 import os
 import jwt
 
-from dotenv import load_dotenv
+from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
 from django.contrib.auth import get_user_model
 
 from datetime import timedelta
+from dotenv import load_dotenv
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import exceptions
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.views import APIView
 
 from project.apps.authentication.serializers import UserSerializer
 from project.settings import settings
@@ -54,6 +57,28 @@ def refresh_token_view(request):
     access_token = generate_access_token(user)
     return Response({'access': access_token})
 
+# @api_view(['GET'])
+# @permission_classes([AllowAny])
+# def access_token_view(request):
+#     token = request.COOKIES.get('access')
+#
+#     if token is None:
+#         return Response({'error': 'Token not found'}, status=status.HTTP_404_NOT_FOUND)
+#     else:
+#         return Response({'access': token}, status=status.HTTP_200_OK)
+
+
+class TokenView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        # Получаем токен из cookies
+        token = request.COOKIES.get('access')
+
+        if token:
+            return Response({'token': token}, status=200)
+        else:
+            return Response({'error': 'Token not found'}, status=404)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -82,21 +107,31 @@ def login_view(request):
     refresh_token = generate_refresh_token(user)
 
     response.set_cookie(
-        key='refresh',
-        value=refresh_token,
+        key="access",
+        value=access_token,
         httponly=True,
-        expires=timedelta(seconds=20),
+        expires=timedelta(seconds=5),
         samesite='Strict',
         secure=True
     )
+    response.set_cookie(
+        key='refresh',
+        value=refresh_token,
+        httponly=True,
+        expires=timedelta(minutes=5),
+        samesite='Strict',
+        secure=True
+    )
+    # response.data = {
+    #     'access': access_token,
+    #     'user': serialized_user
+    # }
     response.data = {
-        'access': access_token,
         'user': serialized_user
     }
     response.status_code = status.HTTP_200_OK
 
     return response
-
 
 @api_view(['GET'])
 def get_user(request):

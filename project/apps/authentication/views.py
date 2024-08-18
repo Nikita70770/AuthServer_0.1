@@ -16,6 +16,7 @@ from rest_framework import exceptions
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
+from project.apps.authentication.models import BlacklistedToken
 from project.apps.authentication.serializers import UserSerializer
 from project.settings import settings
 from project.apps.authentication.utils import generate_access_token, generate_refresh_token
@@ -35,8 +36,13 @@ def refresh_token_view(request):
         1. a cookie that contains a valid refresh_token
         2. a header 'X-CSRFTOKEN' with a valid csrf token, client app can get it from cookies "csrftoken"
     '''
+
     User = get_user_model()
     refresh_token = request.COOKIES.get('refresh')
+
+    if BlacklistedToken.objects.filter(token=refresh_token).exists():
+        raise exceptions.AuthenticationFailed('Token is already blacklisted.')
+
     if refresh_token is None:
         raise exceptions.AuthenticationFailed(
             'Authentication credentials were not provided.')
@@ -57,28 +63,6 @@ def refresh_token_view(request):
     access_token = generate_access_token(user)
     return Response({'access': access_token})
 
-# @api_view(['GET'])
-# @permission_classes([AllowAny])
-# def access_token_view(request):
-#     token = request.COOKIES.get('access')
-#
-#     if token is None:
-#         return Response({'error': 'Token not found'}, status=status.HTTP_404_NOT_FOUND)
-#     else:
-#         return Response({'access': token}, status=status.HTTP_200_OK)
-
-
-class TokenView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        # Получаем токен из cookies
-        token = request.COOKIES.get('access')
-
-        if token:
-            return Response({'token': token}, status=200)
-        else:
-            return Response({'error': 'Token not found'}, status=404)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -92,14 +76,14 @@ def login_view(request):
 
     if (email is None) or (password is None):
         raise exceptions.AuthenticationFailed(
-            'username and password required')
+            'Username and password required')
 
     user = User.objects.filter(email=email).first()
 
     if user is None:
-        raise exceptions.AuthenticationFailed('user not found')
+        raise exceptions.AuthenticationFailed('User not found')
     if not user.check_password(password):
-        raise exceptions.AuthenticationFailed('wrong password')
+        raise exceptions.AuthenticationFailed('Wrong password')
 
     serialized_user = UserSerializer(user).data
 
@@ -132,6 +116,34 @@ def login_view(request):
     response.status_code = status.HTTP_200_OK
 
     return response
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_view(request):
+    token = request.COOKIES.get('refresh')
+
+    if token:
+        BlacklistedToken.objects.create(token=token)
+        response = Response({'message': 'Successfully logged out'}, status=status.HTTP_200_OK)
+
+        response.delete_cookie('access')
+        response.delete_cookie('refresh')
+
+        return response
+    else:
+        return Response({'error': 'Token not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def access_token_view(request):
+    # Получаем токен из cookies
+    token = request.COOKIES.get('access')
+
+    if token:
+        return Response({'access': token}, status=200)
+    else:
+        return Response({'error': 'Token not found'}, status=404)
 
 @api_view(['GET'])
 def get_user(request):

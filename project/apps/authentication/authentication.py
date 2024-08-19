@@ -1,7 +1,9 @@
 import os
 import jwt
 
+from rest_framework import status
 from rest_framework import exceptions
+from rest_framework.response import Response
 from rest_framework.authentication import BaseAuthentication
 
 from django.middleware.csrf import CsrfViewMiddleware
@@ -33,17 +35,17 @@ class SafeJWTAuthentication(BaseAuthentication):
             access_token = authorization_header.split(" ")[1]
             payload = jwt.decode(access_token, str(os.getenv('ACCESS_SECRET_KEY')), algorithms=['HS256'])
         except jwt.ExpiredSignatureError:
-            raise exceptions.AuthenticationFailed('access_token expired')
+            raise exceptions.AuthenticationFailed('Истек срок действия токена доступа.')
         except IndexError:
-            raise exceptions.AuthenticationFailed('Token prefix missing')
+            raise exceptions.AuthenticationFailed('Отсутствует префикс токена.')
 
         user = User.objects.filter(id=payload['user_id']).first()
 
         if user is None:
-            raise exceptions.AuthenticationFailed('User not found')
+            raise exceptions.AuthenticationFailed('Пользователь не найден.')
 
         if not user.is_active:
-            raise exceptions.AuthenticationFailed('User is inactive')
+            raise exceptions.AuthenticationFailed('Пользователь неактивен.')
 
         self.enforce_csrf(request)
 

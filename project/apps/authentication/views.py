@@ -1,8 +1,6 @@
 import os
 import jwt
 
-from django.http import JsonResponse
-from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
 from django.contrib.auth import get_user_model
 
@@ -12,13 +10,10 @@ from dotenv import load_dotenv
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework import exceptions
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.views import APIView
 
 from project.apps.authentication.models import BlacklistedToken
 from project.apps.authentication.serializers import UserSerializer
-from project.settings import settings
 from project.apps.authentication.utils import generate_access_token, generate_refresh_token
 
 load_dotenv()
@@ -26,42 +21,40 @@ load_dotenv()
 
 # Create your views here.
 
-
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @csrf_protect
 def refresh_token_view(request):
-    '''
-    To obtain a new access_token this view expects 2 important things:
-        1. a cookie that contains a valid refresh_token
-        2. a header 'X-CSRFTOKEN' with a valid csrf token, client app can get it from cookies "csrftoken"
-    '''
-
     User = get_user_model()
     refresh_token = request.COOKIES.get('refresh')
 
     if BlacklistedToken.objects.filter(token=refresh_token).exists():
-        raise exceptions.AuthenticationFailed('Token is already blacklisted.')
+        return Response({'detail': 'Токен уже занесен в черный список.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if refresh_token is None:
-        raise exceptions.AuthenticationFailed(
-            'Authentication credentials were not provided.')
+    if not refresh_token:
+        return Response({'detail': 'Токен обновления отсутствует.'}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
         payload = jwt.decode(
             refresh_token, str(os.getenv('REFRESH_SECRET_KEY')), algorithms=['HS256'])
+
+        user = User.objects.filter(id=payload.get('user_id')).first()
+
+        if user is None:
+            return Response({'detail': 'Пользователь не найден.'}, status=status.HTTP_404_NOT_FOUND)
+        if not user.is_active:
+            return Response({'detail': 'Пользователь неактивен.'}, status=status.HTTP_404_NOT_FOUND)
+
+        access_token = generate_access_token(user)
+        response = Response({'access': access_token}, status=status.HTTP_200_OK)
+        return response
+
     except jwt.ExpiredSignatureError:
-        raise exceptions.AuthenticationFailed(
-            'expired refresh token, please login again.')
-
-    user = User.objects.filter(id=payload.get('user_id')).first()
-    if user is None:
-        raise exceptions.AuthenticationFailed('User not found')
-
-    if not user.is_active:
-        raise exceptions.AuthenticationFailed('user is inactive')
-
-    access_token = generate_access_token(user)
-    return Response({'access': access_token})
+        BlacklistedToken.objects.create(token=refresh_token)
+        response = Response({'detail': 'Токен обновления истек.'}, status=status.HTTP_401_UNAUTHORIZED)
+        response.delete_cookie('access')
+        response.delete_cookie('refresh')
+        return response
 
 
 @api_view(['POST'])
@@ -75,15 +68,14 @@ def login_view(request):
     response = Response()
 
     if (email is None) or (password is None):
-        raise exceptions.AuthenticationFailed(
-            'Username and password required')
+        return Response({'detail': 'Поля логин и пароль обязательны для заполнения.'}, status=status.HTTP_400_BAD_REQUEST)
 
     user = User.objects.filter(email=email).first()
 
     if user is None:
-        raise exceptions.AuthenticationFailed('User not found')
+        return Response({'detail': 'Пользователь не найден.'}, status=status.HTTP_404_NOT_FOUND)
     if not user.check_password(password):
-        raise exceptions.AuthenticationFailed('Wrong password')
+        return Response({'detail': 'Неверный пароль.'}, status=status.HTTP_400_BAD_REQUEST)
 
     serialized_user = UserSerializer(user).data
 
@@ -91,31 +83,21 @@ def login_view(request):
     refresh_token = generate_refresh_token(user)
 
     response.set_cookie(
-        key="access",
-        value=access_token,
-        httponly=True,
-        expires=timedelta(seconds=5),
-        samesite='Strict',
-        secure=True
-    )
-    response.set_cookie(
         key='refresh',
         value=refresh_token,
         httponly=True,
-        expires=timedelta(minutes=5),
+        expires=timedelta(seconds=10),
         samesite='Strict',
         secure=True
     )
-    # response.data = {
-    #     'access': access_token,
-    #     'user': serialized_user
-    # }
     response.data = {
+        'access': access_token,
         'user': serialized_user
     }
     response.status_code = status.HTTP_200_OK
 
     return response
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -135,18 +117,8 @@ def logout_view(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def access_token_view(request):
-    # Получаем токен из cookies
-    token = request.COOKIES.get('access')
-
-    if token:
-        return Response({'access': token}, status=200)
-    else:
-        return Response({'error': 'Token not found'}, status=404)
-
-@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_user(request):
     user = request.user
     serialized_user = UserSerializer(user).data
-    return Response({'user': serialized_user})
+    return Response({'user': serialized_user}, status=status.HTTP_200_OK)

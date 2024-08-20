@@ -85,10 +85,10 @@ def login_view(request):
     response.set_cookie(
         key='refresh',
         value=refresh_token,
+        expires=timedelta(days=0, minutes=240, seconds=0),
         httponly=True,
-        expires=timedelta(seconds=10),
         samesite='Strict',
-        secure=True
+        secure=False
     )
     response.data = {
         'access': access_token,
